@@ -4,4 +4,5 @@ Nesse trabalho, o web crawler desenvolvido terá por objetivo de criar uma cópi
 
 ## Utilização
 `python3 webCrawler.py -a <address> -p <port>`
+
 o argumento port é opcional, o default é 80
