@@ -1,12 +1,30 @@
 from socket import *
 from MyHtmlParser import *
+import os
 
 class webCrawler():
-	def __init__(self, serverName, serverPort):
-		self.serverName = serverName
+	def __init__(self, address, serverPort):
+		self.address = address
 		self.serverPort = serverPort
+		self.serverName = None
+		self.path = None
 		self.clientSocket = None
 		self.imagesUrl = []
+
+	def parseAddress(self, address=None):
+		address = address or self.address
+		# Parsing do Endereço
+		if "http://" in address:
+			address = address.replace("http://", "")
+		pos = address.find("/")
+		if pos != -1:
+			self.serverName = address[:pos]
+			self.path = address[pos:]
+		else: #index page
+			self.serverName = address
+			self.path = "/"
+		print("Host:", self.serverName)
+		print("Path:", self.path)
 
 	def connect(self):
 		# Criacao do socket TCP
@@ -14,7 +32,11 @@ class webCrawler():
 		# Conexao com o servidor
 		self.clientSocket.connect((self.serverName,self.serverPort))
 
-	def send(self, request):
+	def send(self, path=None):
+		path = path or self.path
+		if path[0] != "/": path = "/"+path
+		request = "GET {} HTTP/1.1\r\nHost: {}\r\n\r\n".format(path, self.serverName)
+		request = bytes(request, 'utf-8')
 		self.clientSocket.sendall(request)
 
 	def receive(self):
@@ -25,7 +47,7 @@ class webCrawler():
 
 	#retorna header como dicionário e o body
 	def parseResponse(self, response):
-		pos = response.rfind(b"\r\n\r\n")
+		pos = response.find(b"\r\n\r\n")
 		splited_response = response[:pos].decode("utf-8").split("\r\n")
 		first_line = splited_response[0].split(" ")
 		header = {
@@ -37,41 +59,55 @@ class webCrawler():
 			header[line[0]] = line[1]
 		return header, response[pos+4:] #header, body
 
+	def checkTransfer(self, header, response, body):
+		if "Content-Length" in header:
+			return len(body) < int(header["Content-Length"])
+		elif "Transfer-Encoding" in header:
+			return b'0\r\n\r\n' not in response
+		else:
+			print("ERRO: O Servidor não forneceu informações sobre o conteúdo!")
+			return False
+
 	def receiveHtml(self):
 		parser = MyHTMLParser()
-		request = "GET / HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n".format(self.serverName)
-		request = bytes(request, 'utf-8')
+		self.parseAddress()
 		self.connect()
-		self.send(request)
+		self.send()
 		response = self.receive()
 		header, body = self.parseResponse(response)
 		if header["cod"] == 200:
 			arq = open("htmlBase.html", "w")
-			while len(body) < int(header["Content-Length"]): #enquanto houver dados no body
+			while self.checkTransfer(header, response, body):
 				parser.feed(str(body))
 				for i in range (len(parser.imgsUrl)):
 					src = parser.imgsUrl.pop()
 					if src not in self.imagesUrl: self.imagesUrl.append(src)
-				body += self.receive()
+				response = self.receive()
+				body += response
 			arq.write(body.decode("utf-8"))
 			arq.close()
 		else:
 			print("Erro: A requisição retornou código: {} {}".format(header["cod"], header["cod_status"]))
 		self.close()
 
-	def receiveImgs(self): #TO DO: Parser do Header para checar cod do response
-		print(self.imagesUrl)
+	def receiveImgs(self):
 		self.connect()
+		localPath = os.getcwd() + "/imagens"
+		try:
+			os.mkdir(localPath)
+		except OSError as error: #diretório já existe
+			pass
 		for i in range(len(self.imagesUrl)):
-			request = "GET /{} HTTP/1.1\r\nHost: {}\r\n\r\n".format(self.imagesUrl[i], self.serverName)
-			request = bytes(request, 'utf-8')
-			self.send(request)
+			self.send(self.imagesUrl[i])
 			response = self.receive()
 			header, body = self.parseResponse(response)
-			response = response[response.rfind(b"\r\n\r\n")+4:]
 			if header["cod"] == 200:
-				imgExtension = self.imagesUrl[i][self.imagesUrl[i].find(".")+1:]
-				arq_img = open("imagem{}.{}".format(i+1, imgExtension), "wb")
+				pos = self.imagesUrl[i].rfind(".")
+				imgName = self.imagesUrl[i][self.imagesUrl[i].rfind("/"):pos]
+				imgName = localPath + imgName
+				imgExtension = self.imagesUrl[i][pos+1:]
+				print("Imagem salva em:", imgName + "."+ imgExtension)
+				arq_img = open("{}.{}".format(imgName, imgExtension), "wb")
 				while len(body) < int(header["Content-Length"]):
 					body += self.receive()
 				arq_img.write(body)
@@ -82,25 +118,25 @@ class webCrawler():
 
 if __name__ == '__main__':
 	import sys, getopt
-	serverName = None
-	serverPort = None
+	address = None
+	serverPort = 80
 	try:
-		opts, args = getopt.getopt(sys.argv[1:],"h:p:",["host=","port="])
+		opts, args = getopt.getopt(sys.argv[1:],"a:p:",["address=","port="])
 	except getopt.GetoptError as err:
 		print(err)
-		print('HINT: webcrawler.py -h <host> -p <port>')
+		print('HINT: webcrawler.py -a <address> -p <port>')
 		sys.exit(1)
 	for opt, arg in opts:
-		if opt in ("-h", "--host"):
-			serverName = arg
+		if opt in ("-a", "--address"):
+			address = arg
 		elif opt in ("-p", "--port"):
 			serverPort = int(arg)
-	if(serverName == None or serverPort == None):
-		print("Error: Missing Arguments")
-		print('HINT: webcrawler.py -h <host> -p <port>')
+	if(address == None):
+		print("Error: Missing Argument")
+		print('HINT: webcrawler.py -a <address> -p <port>')
 		sys.exit(1)
 
-	webcrawler = webCrawler(serverName, serverPort)
+	webcrawler = webCrawler(address, serverPort)
 	webcrawler.receiveHtml()
 	webcrawler.receiveImgs()
 	print("Completed")
