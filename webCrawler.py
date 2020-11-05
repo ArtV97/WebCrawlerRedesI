@@ -106,7 +106,8 @@ class webCrawler():
 				pos = self.imagesUrl[i].rfind(".")
 				imgName = self.imagesUrl[i][self.imagesUrl[i].rfind("/"):pos]
 				imgName = localPath + imgName
-				imgExtension = self.imagesUrl[i][pos+1:]
+				pos = header["Content-Type"].rfind("/")
+				imgExtension = header["Content-Type"][pos+1:]
 				print("Imagem salva em:", imgName + "."+ imgExtension)
 				arq_img = open("{}.{}".format(imgName, imgExtension), "wb")
 				while len(body) < int(header["Content-Length"]):
