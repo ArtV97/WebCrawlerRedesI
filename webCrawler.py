@@ -76,12 +76,12 @@ class webCrawler():
 		response = self.receive()
 		header, body = self.parseResponse(response)
 		if header["cod"] == 200:
-			arq = open("htmlBase.html", "w")
+			arq = open("htmlBase.html", "w", encoding="utf-8")
 			while self.checkTransfer(header, response, body):
 				parser.feed(str(body))
-				for i in range (len(parser.imgsUrl)):
-					src = parser.imgsUrl.pop()
+				for src in parser.imgsUrl:
 					if src not in self.imagesUrl: self.imagesUrl.append(src)
+				parser.imgsUrl.clear() #esvazia lista
 				response = self.receive()
 				body += response
 			arq.write(body.decode("utf-8"))
@@ -95,8 +95,9 @@ class webCrawler():
 		localPath = os.getcwd() + "/imagens"
 		try:
 			os.mkdir(localPath)
-		except OSError as error: #diretório já existe
-			pass
+		except OSError: #diretório já existe
+			for root, dirs, files in os.walk(localPath): #removendo imagens antigas do diretório
+				for img in files: os.remove(os.path.join(root, img))
 		for i in range(len(self.imagesUrl)):
 			self.send(self.imagesUrl[i])
 			response = self.receive()
